@@ -12,9 +12,13 @@ import {
   type ChatMessage,
 } from "../lib/chat";
 import Icon from "./icon";
+import {
+  CHAT_MESSAGE_SELECT,
+  ChatRequestError,
+  describeChatError,
+  loadChatReplies,
+} from "../lib/chat-api";
 
-const selection =
-  "*, reactions:chat_reactions(*), shared_entry:entries!chat_messages_workspace_id_shared_entry_id_fkey(id,title,description,category), reply:chat_messages!chat_messages_workspace_id_reply_to_fkey(id,body,author_id,author_name)";
 const PAGE_SIZE = 50;
 export default function TeamChat({
   db,
@@ -95,6 +99,25 @@ export default function TeamChat({
   }, []);
 
   useEffect(() => {
+    if (!demo) return;
+    setMessages((old) =>
+      old.map((message) => {
+        if (!message.shared_entry_id) return message;
+        const entry = entries.find((e) => e.id === message.shared_entry_id);
+        return entry
+          ? { ...message, shared_entry: entry }
+          : {
+              ...message,
+              shared_entry_id: null,
+              shared_entry: null,
+              shared_entry_deleted: true,
+            };
+      }),
+    );
+    setShare((id) => (entries.some((e) => e.id === id) ? id : ""));
+  }, [demo, entries]);
+
+  useEffect(() => {
     if (demo || !db) return;
     let alive = true,
       running = false,
@@ -115,7 +138,8 @@ export default function TeamChat({
             .eq("workspace_id", workspaceId)
             .eq("user_id", userId)
             .maybeSingle();
-          if (membership.error) throw membership.error;
+          if (membership.error)
+            throw new ChatRequestError("membership check", membership.error);
           if (!alive) break;
           if (!membership.data) {
             setAuthorized(false);
@@ -132,7 +156,7 @@ export default function TeamChat({
           for (let page = 0; page < pages; page++) {
             let query = db!
               .from("chat_messages")
-              .select(selection)
+              .select(CHAT_MESSAGE_SELECT)
               .eq("workspace_id", workspaceId)
               .order("created_at", { ascending: false })
               .order("id", { ascending: false })
@@ -143,18 +167,20 @@ export default function TeamChat({
                 `created_at.lt.${before.created_at},and(created_at.eq.${before.created_at},id.lt.${before.id})`,
               );
             const r = await query;
-            if (r.error) throw r.error;
+            if (r.error) throw new ChatRequestError("history query", r.error);
             if (!alive) break;
             all.push(...(r.data as unknown as ChatMessage[]));
             if (r.data.length < PAGE_SIZE) break;
           }
+          const hydrated = await loadChatReplies(db!, workspaceId, all);
           const cursor = await db!
             .from("chat_reads")
             .select("read_at")
             .eq("workspace_id", workspaceId)
             .eq("user_id", userId)
             .maybeSingle();
-          if (cursor.error) throw cursor.error;
+          if (cursor.error)
+            throw new ChatRequestError("read cursor query", cursor.error);
           let count = db!
             .from("chat_messages")
             .select("id", { count: "exact", head: true })
@@ -162,7 +188,8 @@ export default function TeamChat({
             .neq("author_id", userId);
           if (cursor.data) count = count.gt("created_at", cursor.data.read_at);
           const result = await count;
-          if (result.error) throw result.error;
+          if (result.error)
+            throw new ChatRequestError("unread count", result.error);
           if (!alive) break;
           // Recheck after fetching so a removal during the requests clears cached messages.
           const check = await db!
@@ -171,22 +198,20 @@ export default function TeamChat({
             .eq("workspace_id", workspaceId)
             .eq("user_id", userId)
             .maybeSingle();
-          if (check.error) throw check.error;
+          if (check.error)
+            throw new ChatRequestError("membership recheck", check.error);
           if (!alive) break;
           if (!check.data) {
             again = true;
             continue;
           }
-          setMessages(mergeChatMessages([], all));
+          setMessages(mergeChatMessages([], hydrated));
           setUnread(result.count || 0);
           setHasOlder(all.length === pages * PAGE_SIZE);
           setAuthorized(true);
           setError("");
-        } catch {
-          if (alive)
-            setError(
-              "Couldn’t refresh team chat. Check your connection and that the team chat migration has been applied.",
-            );
+        } catch (error) {
+          if (alive) setError(describeChatError(error));
         } finally {
           if (alive) setLoading(false);
         }
@@ -198,6 +223,16 @@ export default function TeamChat({
       "postgres_changes",
       {
         event: "INSERT",
+        schema: "public",
+        table: "chat_messages",
+        filter: `workspace_id=eq.${workspaceId}`,
+      },
+      () => void refresh(),
+    );
+    channel = channel.on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
         schema: "public",
         table: "chat_messages",
         filter: `workspace_id=eq.${workspaceId}`,
@@ -223,7 +258,7 @@ export default function TeamChat({
       setConnection(
         status === "SUBSCRIBED"
           ? "Live · workspace members"
-          : "Reconnecting · refreshing every 15s",
+          : `Realtime ${status} · history refreshes every 15s`,
       );
       if (status === "SUBSCRIBED") void refresh();
     });
@@ -264,7 +299,11 @@ export default function TeamChat({
       .then((r) => {
         if (!alive) return;
         if (r.error)
-          setError("Couldn’t save your read position. Try refreshing chat.");
+          setError(
+            describeChatError(
+              new ChatRequestError("read cursor update", r.error),
+            ),
+          );
         else {
           readRef.current = newest.id;
           void refreshRef.current();
@@ -352,9 +391,10 @@ export default function TeamChat({
             workspace_id: workspaceId,
             author_id: userId,
           })
-          .select(selection)
+          .select(CHAT_MESSAGE_SELECT)
           .single();
-        if (r.error && r.error.code !== "23505") throw r.error;
+        if (r.error && r.error.code !== "23505")
+          throw new ChatRequestError("message insert", r.error);
         if (r.error) {
           const delivered = await db!
             .from("chat_messages")
@@ -362,10 +402,13 @@ export default function TeamChat({
             .eq("id", pending.current.id)
             .eq("author_id", userId)
             .single();
-          if (delivered.error) throw delivered.error;
+          if (delivered.error)
+            throw new ChatRequestError("delivery check", delivered.error);
         } else
           setMessages((old) =>
-            mergeChatMessages(old, [r.data as unknown as ChatMessage]),
+            mergeChatMessages(old, [
+              { ...(r.data as unknown as ChatMessage), reply },
+            ]),
           );
         pending.current = null;
         void refreshRef.current();
@@ -377,9 +420,11 @@ export default function TeamChat({
       composerRef.current?.focus();
     } catch (e) {
       setError(
-        e instanceof Error
-          ? e.message
-          : "Couldn’t send your message. Your draft is still here; try again.",
+        e instanceof ChatRequestError
+          ? `${describeChatError(e)} Your draft is still here; try again.`
+          : e instanceof Error
+            ? e.message
+            : "Couldn’t send your message. Your draft is still here; try again.",
       );
     } finally {
       setSending(false);
@@ -405,7 +450,7 @@ export default function TeamChat({
         const r = await db!
           .from("chat_reactions")
           .upsert(row, { onConflict: "message_id,user_id,emoji" });
-        if (r.error) throw r.error;
+        if (r.error) throw new ChatRequestError("reaction update", r.error);
       }
       setMessages((old) =>
         old.map((m) =>
@@ -423,8 +468,8 @@ export default function TeamChat({
         ),
       );
       if (!demo) void refreshRef.current();
-    } catch {
-      setError("Couldn’t update your reaction. Please try again.");
+    } catch (error) {
+      setError(describeChatError(error, "reaction update"));
     } finally {
       setReacting(null);
     }
@@ -569,7 +614,7 @@ export default function TeamChat({
                 </blockquote>
               )}
               {m.body && <p>{m.body}</p>}
-              {m.shared_entry_id &&
+              {(m.shared_entry_id || m.shared_entry_deleted) &&
                 (m.shared_entry ? (
                   <button
                     className="chat-tool-card"
@@ -586,7 +631,11 @@ export default function TeamChat({
                     <small>{m.shared_entry.description.slice(0, 140)}</small>
                   </button>
                 ) : (
-                  <small>Library entry unavailable</small>
+                  <small>
+                    {m.shared_entry_deleted
+                      ? "Library entry permanently deleted"
+                      : "Library entry unavailable"}
+                  </small>
                 ))}
               <div className="chat-actions">
                 <button

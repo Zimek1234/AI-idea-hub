@@ -229,6 +229,37 @@ export default function Hub() {
       setError(friendly(e));
     }
   }
+  async function deletePermanently(entry: Entry) {
+    if (entry.status !== "Trash")
+      throw new Error(
+        "Move this entry to Trash before deleting it permanently.",
+      );
+    const g = generation.current;
+    if (!demo) {
+      if (!db || !user || !wid || entry.workspace_id !== wid)
+        throw new Error("Select an accessible workspace first.");
+      const r = await db
+        .from("entries")
+        .delete()
+        .eq("id", entry.id)
+        .eq("workspace_id", wid)
+        .eq("status", "Trash")
+        .select("id")
+        .maybeSingle();
+      if (r.error || !r.data)
+        throw new Error(
+          "Couldn’t delete this entry. It may have been restored or removed, or deletion is not yet enabled for this workspace. Refresh and try again.",
+        );
+    }
+    if (g !== generation.current) return;
+    setEntries((old) => old.filter((e) => e.id !== entry.id));
+    setSelected(null);
+    notify(
+      demo
+        ? "Entry deleted from this demo session."
+        : "Entry permanently deleted.",
+    );
+  }
   async function login(e: React.FormEvent) {
     e.preventDefault();
     setAuthBusy(true);
@@ -925,6 +956,7 @@ export default function Hub() {
             setSelected(null);
           }}
           onStatus={(s) => changeStatus(selected, s)}
+          onDelete={() => deletePermanently(selected)}
         />
       )}
       {team && (
@@ -1184,6 +1216,7 @@ function Detail({
   onClose,
   onEdit,
   onStatus,
+  onDelete,
 }: {
   entry: Entry;
   demo: boolean;
@@ -1192,7 +1225,10 @@ function Detail({
   onClose: () => void;
   onEdit: () => void;
   onStatus: (s: Status) => void;
+  onDelete: () => Promise<void>;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [tab, setTab] = useState("Overview"),
     [rating, setRating] = useState(0),
     [notes, setNotes] = useState(""),
@@ -1291,8 +1327,66 @@ function Detail({
       setBusy(false);
     }
   }
+  if (confirmDelete && entry.status === "Trash")
+    return (
+      <Modal
+        key="confirm-delete"
+        title="Delete permanently?"
+        onClose={() => {
+          if (!deleting) {
+            setConfirmDelete(false);
+            setError("");
+          }
+        }}
+      >
+        <p className="delete-warning">
+          Permanently delete <strong>“{entry.title}”</strong> from this
+          workspace?
+        </p>
+        <p className="muted">
+          This also deletes everyone’s ratings, personal notes, and comments on
+          this entry. Chat messages remain with a deleted-entry label. This
+          cannot be undone.
+        </p>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="modal-actions">
+          <button
+            className="secondary"
+            autoFocus
+            disabled={deleting}
+            onClick={() => {
+              setConfirmDelete(false);
+              setError("");
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            className="danger-button"
+            disabled={deleting}
+            onClick={async () => {
+              setDeleting(true);
+              setError("");
+              try {
+                await onDelete();
+              } catch (e) {
+                setError(friendly(e));
+              } finally {
+                setDeleting(false);
+              }
+            }}
+          >
+            {deleting ? "Deleting…" : "Delete permanently"}
+          </button>
+        </div>
+      </Modal>
+    );
   return (
-    <Modal title={entry.title} onClose={onClose} wide>
+    <Modal key="entry-details" title={entry.title} onClose={onClose} wide>
       <div className="detail-meta">
         <span className="category-tag">{entry.category}</span>
         <select
@@ -1307,6 +1401,17 @@ function Detail({
         <button className="secondary" onClick={onEdit}>
           Edit entry
         </button>
+        {entry.status === "Trash" && (
+          <button
+            className="danger-button"
+            onClick={() => {
+              setConfirmDelete(true);
+              setError("");
+            }}
+          >
+            Delete permanently
+          </button>
+        )}
       </div>
       <div className="detail-tabs">
         {["Overview", "My notes", "Comments"].map((t) => (

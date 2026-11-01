@@ -1997,3 +1997,19 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
+
+.danger-button {
+  background: #552b34;
+  border: 1px solid #87505d;
+  border-radius: 8px;
+  color: #ffccd5;
+  padding: 10px 14px;
+  font-weight: 600;
+}
+.danger-button:hover:not(:disabled) {
+  background: #6b3340;
+}
+.delete-warning {
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
