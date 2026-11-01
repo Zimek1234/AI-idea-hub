@@ -42,6 +42,8 @@ Library and idea updates are fetched when entering/switching workspaces or after
 
 ## Shared team chat
 
+See [Chat query repair and permanent deletion](docs/CHAT_AND_TRASH_FIX.md) for the query fix, separate unapplied SQL migration, and read-only diagnostics. Entries in Trash now offer **Delete permanently**, with confirmation; restoration through the status selector remains available. Permanent deletion requires `202611010002_trash_delete.sql` after approval. It removes comments/ratings/personal notes while chat history retains a deleted-entry label. Demo deletion is memory-only.
+
 Each workspace has one persistent shared conversation. Use **Team chat** in the bottom-right corner to open or collapse the right-side desktop panel. On mobile it opens full-screen; Close or Escape returns to the library. Messages show the author and local date/time. Replies quote their parent message; six emoji reactions can be toggled per person. Select **Share a library tool** to send a clickable card, with or without a message. Cards open the existing library details; unavailable entries have a fallback label. Chat does not change the MCP endpoint or its four tools.
 
 Chat messages, reactions, and read cursors use Supabase Postgres Changes with workspace filters and database RLS. A subscription reconnect, browser focus, or network reconnection refreshes history; a 15-second refresh also recovers missed events and checks membership. Connection status appears in the header. Chat initially fetches the newest 50 messages; **Load older messages** pages backward through persistent history. Messages are plain text, limited to 3,000 characters. History is append-only in this version; editing/deleting messages and attachments are not included.

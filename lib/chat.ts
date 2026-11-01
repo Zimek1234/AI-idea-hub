@@ -43,6 +43,7 @@ export type ChatMessage = {
   created_at: string;
   reply_to: string | null;
   shared_entry_id: string | null;
+  shared_entry_deleted?: boolean;
   reactions: ChatReaction[];
   reply: {
     id: string;

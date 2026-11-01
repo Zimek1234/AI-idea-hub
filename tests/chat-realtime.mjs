@@ -38,6 +38,8 @@ let readAt = null,
   authorized = true,
   failNext = false,
   posts = 0;
+let entryDeleted = false,
+  denyDelete = true;
 const sockets = new Set();
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium",
@@ -160,8 +162,46 @@ await page.route("https://chat-fixture.supabase.co/**", async (route) => {
           )
         : [],
     );
-  if (table === "entries")
-    return json(request.headers().accept?.includes("object") ? entry : [entry]);
+  if (table === "entries") {
+    if (request.method() === "PATCH")
+      Object.assign(entry, request.postDataJSON());
+    if (request.method() === "DELETE") {
+      assert.equal(url.searchParams.get("workspace_id"), `eq.${wid}`);
+      assert.equal(url.searchParams.get("id"), `eq.${entry.id}`);
+      assert.equal(url.searchParams.get("status"), "eq.Trash");
+      if (denyDelete) {
+        denyDelete = false;
+        return route.fulfill({
+          status: 403,
+          contentType: "application/json",
+          body: JSON.stringify({ code: "42501", message: "Permission denied" }),
+        });
+      }
+      assert.equal(entry.status, "Trash");
+      entryDeleted = true;
+      for (const message of messages) {
+        if (message.shared_entry_id === entry.id) {
+          message.shared_entry_id = null;
+          message.shared_entry = null;
+          message.shared_entry_deleted = true;
+          emit("chat_messages", "UPDATE", message);
+        }
+      }
+      return json(
+        request.headers().accept?.includes("object")
+          ? { id: entry.id }
+          : [{ id: entry.id }],
+      );
+    }
+    return json(
+      entryDeleted
+        ? []
+        : request.headers().accept?.includes("object")
+          ? entry
+          : [entry],
+    );
+  }
+  if (table === "entry_feedback" || table === "comments") return json([]);
   if (table === "workspace_invites") return json([]);
   if (table === "chat_reads")
     return json(
@@ -189,6 +229,16 @@ await page.route("https://chat-fixture.supabase.co/**", async (route) => {
     return json(null);
   }
   if (table === "chat_messages") {
+    if (url.searchParams.get("select")?.includes("reply:chat_messages!")) {
+      return route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "PGRST200",
+          message: "Composite self-reference cannot be embedded",
+        }),
+      });
+    }
     if (request.method() === "POST") {
       posts++;
       if (failNext) {
@@ -216,8 +266,14 @@ await page.route("https://chat-fixture.supabase.co/**", async (route) => {
       authorized && url.searchParams.get("workspace_id") !== `eq.${otherWid}`
         ? [...messages]
         : [];
-    if (url.searchParams.has("id"))
-      rows = rows.filter((m) => `eq.${m.id}` === url.searchParams.get("id"));
+    if (url.searchParams.has("id")) {
+      const filter = url.searchParams.get("id");
+      rows = rows.filter((m) =>
+        filter.startsWith("in.(")
+          ? filter.slice(4, -1).split(",").includes(m.id)
+          : filter === `eq.${m.id}`,
+      );
+    }
     if (request.method() === "HEAD") {
       rows = rows.filter(
         (m) =>
@@ -340,6 +396,37 @@ try {
   assert.equal(posts, 2);
   console.log(
     "PASS authenticated chat: history pagination, Realtime inserts/reactions, unread counts, read cursors, reply/share payload and draft preservation after a send failure",
+  );
+  await sent.getByRole("button", { name: /Research tool/ }).click();
+  const details = page.getByRole("dialog", {
+    name: "Research tool",
+    exact: true,
+  });
+  await details.getByLabel("Entry status").selectOption("Trash");
+  await details
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
+  const confirm = page.getByRole("dialog", {
+    name: "Delete permanently?",
+    exact: true,
+  });
+  await confirm
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
+  await confirm.getByRole("alert").waitFor();
+  assert.equal(entryDeleted, false);
+  assert.equal(await confirm.isVisible(), true);
+  await confirm
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
+  await page.waitForFunction(() => !document.querySelector(".modal-backdrop"));
+  await page
+    .getByText("Library entry permanently deleted", { exact: true })
+    .waitFor();
+  assert.equal(entryDeleted, true);
+  assert.equal(await page.locator(".entry-card").count(), 0);
+  console.log(
+    "PASS authenticated deletion sends Trash/workspace/id filters, preserves confirmation on permission failure, and refreshes chat tombstones through Realtime UPDATE",
   );
   await page.getByLabel("Switch workspace").selectOption(otherWid);
   await page.waitForFunction(
