@@ -4,7 +4,7 @@ import type { ChatMessage } from "./chat";
 // PostgREST cannot resolve the composite self-reference as an embedded reply.
 // Keep the other joins, and resolve parents explicitly under the caller's RLS.
 export const CHAT_MESSAGE_SELECT =
-  "*, reactions:chat_reactions(*), shared_entry:entries!chat_messages_workspace_id_shared_entry_id_fkey(id,title,description,category)";
+  "*, reactions:chat_reactions(*), shared_entry:entries!chat_messages_workspace_id_shared_entry_id_fkey(id,title,description,category,section)";
 export async function loadChatReplies(
   db: SupabaseClient,
   workspaceId: string,

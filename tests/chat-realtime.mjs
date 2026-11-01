@@ -360,7 +360,13 @@ try {
   await page.waitForFunction(() => !document.querySelector(".chat-unread"));
   const last = page.locator(".chat-message").last();
   await last.getByRole("button", { name: "Reply", exact: true }).click();
-  await page.getByLabel("Share a library tool").selectOption(entry.id);
+  await page
+    .getByRole("button", { name: "Share from Idea Hub", exact: true })
+    .click();
+  await page.getByLabel("Search Idea Hub entries").fill(entry.title);
+  await page
+    .getByRole("button", { name: "Research tool · AI Library", exact: true })
+    .click();
   await page.getByLabel("Message your team").fill("Try this shared tool");
   failNext = true;
   await page
@@ -383,13 +389,16 @@ try {
     /live message from Bob/,
   );
   await sent
+    .getByLabel("Add reaction to message from You", { exact: true })
+    .click();
+  await sent
     .getByLabel("React 🚀 to message from You", { exact: true })
     .click();
   await page.waitForFunction(
     () =>
       document
         .querySelector(
-          '.chat-message:last-child [aria-label="React 🚀 to message from You"]',
+          '.chat-message:last-child [aria-label^="Toggle 🚀 reaction"]',
         )
         ?.getAttribute("aria-pressed") === "true",
   );
@@ -421,7 +430,7 @@ try {
     .click();
   await page.waitForFunction(() => !document.querySelector(".modal-backdrop"));
   await page
-    .getByText("Library entry permanently deleted", { exact: true })
+    .getByText("Shared entry permanently deleted", { exact: true })
     .waitFor();
   assert.equal(entryDeleted, true);
   assert.equal(await page.locator(".entry-card").count(), 0);

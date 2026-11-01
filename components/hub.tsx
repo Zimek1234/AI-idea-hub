@@ -901,6 +901,10 @@ export default function Hub() {
             if (demo) {
               const entry = entries.find((e) => e.id === id);
               if (!entry) throw new Error("Entry unavailable");
+              setSection(entry.section);
+              setSearch("");
+              setCategory("All");
+              setStatus("All");
               setSelected(entry);
             } else {
               const r = await db!
@@ -911,6 +915,10 @@ export default function Hub() {
                 .single();
               if (r.error) throw r.error;
               if (g !== generation.current) return;
+              setSection(r.data.section);
+              setSearch("");
+              setCategory("All");
+              setStatus("All");
               setSelected(r.data);
             }
           }}

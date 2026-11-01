@@ -245,6 +245,45 @@ try {
   console.log(
     "PASS real PostgREST deletion: active/foreign rows protected, member deletes Trash, notes/comments cascade, chat history and replies survive",
   );
+  const idea = await member
+    .from("entries")
+    .insert({
+      workspace_id: wid,
+      title: "Research project",
+      category: "Workflow",
+      section: "ideas",
+    })
+    .select("id")
+    .single();
+  assert.ifError(idea.error);
+  const beforeMigration = await peer
+    .from("chat_messages")
+    .insert({ workspace_id: wid, shared_entry_id: idea.data.id });
+  assert.ok(beforeMigration.error);
+  sql(
+    await readFile(
+      new URL(
+        "../supabase/migrations/202611010003_chat_share_all_sections.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const sharedIdea = await peer
+    .from("chat_messages")
+    .insert({ workspace_id: wid, shared_entry_id: idea.data.id })
+    .select(CHAT_MESSAGE_SELECT)
+    .single();
+  assert.ifError(sharedIdea.error);
+  assert.equal(sharedIdea.data.shared_entry.section, "ideas");
+  assert.equal(sharedIdea.data.shared_entry.title, "Research project");
+  const forbidden = await foreign
+    .from("chat_messages")
+    .insert({ workspace_id: wid, shared_entry_id: idea.data.id });
+  assert.ok(forbidden.error);
+  console.log(
+    "PASS real PostgREST idea sharing works after the new trigger migration; section metadata and membership protection are preserved",
+  );
 } finally {
   for (const name of [apiName, dbName]) {
     try {

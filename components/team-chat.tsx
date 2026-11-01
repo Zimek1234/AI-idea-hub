@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Entry } from "../lib/validation";
 import {
-  chatEmojis,
+  sectionLabel,
+  shouldSendOnEnter,
   CHAT_LIMIT,
   demoConversation,
   mergeChatMessages,
@@ -12,6 +13,7 @@ import {
   type ChatMessage,
 } from "../lib/chat";
 import Icon from "./icon";
+import { EntrySharePicker, MessageReactions } from "./chat-controls";
 import {
   CHAT_MESSAGE_SELECT,
   ChatRequestError,
@@ -68,6 +70,7 @@ export default function TeamChat({
   const panelRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const composing = useRef(false);
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const readRef = useRef("");
   // Keep one id across uncertain retries so a delivered POST cannot create a duplicate.
@@ -320,6 +323,7 @@ export default function TeamChat({
     const previous = document.body.style.overflow;
     if (mobile) document.body.style.overflow = "hidden";
     const key = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       // Existing entry dialogs keep their own keyboard handling above the chat.
       if (document.querySelector(".modal-backdrop")) return;
       if (e.key === "Escape") {
@@ -330,7 +334,7 @@ export default function TeamChat({
       if (mobile && e.key === "Tab") {
         const targets = Array.from(
           panelRef.current?.querySelectorAll<HTMLElement>(
-            "button:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href]",
+            "button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href]",
           ) || [],
         ).filter((e) => e.getClientRects().length);
         const first = targets[0],
@@ -609,7 +613,7 @@ export default function TeamChat({
                     ↳ {m.reply ? messageAuthor(m.reply) : "Earlier message"}
                   </strong>
                   <span>
-                    {m.reply?.body.slice(0, 160) || "Shared a library tool"}
+                    {m.reply?.body.slice(0, 160) || "Shared an Idea Hub entry"}
                   </span>
                 </blockquote>
               )}
@@ -622,19 +626,22 @@ export default function TeamChat({
                       try {
                         await onOpenEntry(m.shared_entry_id!);
                       } catch {
-                        setError("That library entry is no longer available.");
+                        setError("That entry is no longer available.");
                       }
                     }}
                   >
-                    <span>{m.shared_entry.category} · AI Library ↗</span>
+                    <span>
+                      {m.shared_entry.category} ·{" "}
+                      {sectionLabel(m.shared_entry.section || "library")} ↗
+                    </span>
                     <strong>{m.shared_entry.title}</strong>
                     <small>{m.shared_entry.description.slice(0, 140)}</small>
                   </button>
                 ) : (
                   <small>
                     {m.shared_entry_deleted
-                      ? "Library entry permanently deleted"
-                      : "Library entry unavailable"}
+                      ? "Shared entry permanently deleted"
+                      : "Shared entry unavailable"}
                   </small>
                 ))}
               <div className="chat-actions">
@@ -647,30 +654,15 @@ export default function TeamChat({
                 >
                   Reply
                 </button>
-                <div className="chat-reactions" aria-label="Emoji reactions">
-                  {chatEmojis.map((emoji) => {
-                    const rows = m.reactions.filter(
-                      (r) => r.emoji === emoji && r.active,
-                    );
-                    const mine = rows.some((r) => r.user_id === userId);
-                    return (
-                      <button
-                        key={emoji}
-                        aria-label={`React ${emoji} to message from ${messageAuthor(m)}`}
-                        aria-pressed={mine}
-                        title={
-                          rows.map((r) => name(r.user_id)).join(", ") ||
-                          `React ${emoji}`
-                        }
-                        disabled={!authorized || reacting !== null}
-                        onClick={() => void react(m, emoji)}
-                      >
-                        {emoji}
-                        {rows.length > 0 && <span>{rows.length}</span>}
-                      </button>
-                    );
-                  })}
-                </div>
+                <MessageReactions
+                  reactions={m.reactions}
+                  userId={userId}
+                  author={messageAuthor(m)}
+                  disabled={!authorized}
+                  busy={reacting !== null}
+                  name={name}
+                  onReact={(emoji) => react(m, emoji)}
+                />
               </div>
             </article>
           ))}
@@ -686,7 +678,7 @@ export default function TeamChat({
               <span>
                 Replying to {messageAuthor(reply)}
                 <small>
-                  {reply.body.slice(0, 90) || "Shared a library tool"}
+                  {reply.body.slice(0, 90) || "Shared an Idea Hub entry"}
                 </small>
               </span>
               <button
@@ -698,24 +690,17 @@ export default function TeamChat({
               </button>
             </div>
           )}
-          <label className="sr-only" htmlFor="chat-share">
-            Share a library tool
-          </label>
-          <select
-            id="chat-share"
+          <EntrySharePicker
+            entries={entries}
+            workspaceId={workspaceId}
+            demo={demo}
             value={share}
-            onChange={(e) => setShare(e.target.value)}
             disabled={!authorized || sending}
-          >
-            <option value="">＋ Share a library tool</option>
-            {entries
-              .filter((e) => e.section === "library" && e.status !== "Trash")
-              .map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.title}
-                </option>
-              ))}
-          </select>
+            onChange={(id) => {
+              setShare(id);
+              composerRef.current?.focus();
+            }}
+          />
           <label className="sr-only" htmlFor="chat-body">
             Message your team
           </label>
@@ -724,6 +709,32 @@ export default function TeamChat({
             ref={composerRef}
             value={body}
             onChange={(e) => setBody(e.target.value)}
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={() => {
+              composing.current = false;
+            }}
+            onKeyDown={(e) => {
+              if (
+                !shouldSendOnEnter(
+                  {
+                    key: e.key,
+                    shiftKey: e.shiftKey,
+                    ctrlKey: e.ctrlKey,
+                    altKey: e.altKey,
+                    metaKey: e.metaKey,
+                    isComposing: e.nativeEvent.isComposing,
+                    keyCode: e.nativeEvent.keyCode,
+                  },
+                  composing.current,
+                )
+              )
+                return;
+              e.preventDefault();
+              if (!e.repeat && !sending && authorized && (body.trim() || share))
+                e.currentTarget.form?.requestSubmit();
+            }}
             maxLength={CHAT_LIMIT}
             rows={3}
             placeholder={
@@ -735,7 +746,8 @@ export default function TeamChat({
           />
           <div className="chat-send-row">
             <small>
-              {[...body].length}/{CHAT_LIMIT} ·{" "}
+              {[...body].length}/{CHAT_LIMIT} · Enter to send · Shift + Enter
+              for a new line ·{" "}
               {demo ? "Only this demo session" : "Visible to workspace members"}
             </small>
             <button

@@ -1,5 +1,7 @@
 # Deployment handoff
 
+Current local usability branch: `feature/chat-usability`, from `main` at `605ed3a`. See `docs/CHAT_USABILITY.md`. Its unapplied `202611010003_chat_share_all_sections.sql` migration is required before releasing Ideas & Projects sharing. Do not push, merge, deploy, or modify live Supabase without approval. The older branch handoffs below are historical.
+
 Current local repair branch: `feature/trash-delete-chat-fix`, from merged `main` at `636d54c`. Do not push, merge, deploy, or change live Supabase without approval. See `docs/CHAT_AND_TRASH_FIX.md` for the frontend PostgREST reply-query fix and the separate unapplied `202611010002_trash_delete.sql` migration. The sections below record the earlier team-chat/MVP handoff and are historical; do not reuse their branch-push commands for this repair.
 
 The local `feature/team-chat` branch extends `deploy/mvp` with shared workspace chat. Do not push, merge, deploy, or apply `202611010001_team_chat.sql` until explicitly authorized. The already deployed MVP is unaffected by local code and test runs. See README's shared chat section for the migration order, Realtime publication setup, and multi-user verification. The export bundle/source archive described below contains the original MVP; it is not a backup of this new feature commit.

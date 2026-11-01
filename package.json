@@ -10,6 +10,7 @@
     "test": "node --experimental-strip-types --test --test-isolation=none tests/*.test.ts",
     "test:browser": "node tests/browser.mjs",
     "test:chat": "node tests/chat-browser.mjs",
+    "test:chat-usability": "node tests/chat-usability-browser.mjs",
     "test:chat-realtime": "node tests/chat-realtime.mjs",
     "test:chat-postgrest": "node tests/chat-postgrest.mjs",
     "test:delete": "node tests/delete-browser.mjs",
