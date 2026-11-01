@@ -69,7 +69,7 @@ try {
   );
   assert.equal(await page.getByRole("dialog").count(), 0);
   await chat
-    .getByText("Library entry permanently deleted", { exact: true })
+    .getByText("Shared entry permanently deleted", { exact: true })
     .waitFor();
   assert.equal(await chat.locator(".chat-message").count(), 3);
   assert.equal(await chat.locator(".chat-tool-card").count(), 0);

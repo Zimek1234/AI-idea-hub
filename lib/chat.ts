@@ -1,7 +1,51 @@
+import type { Entry } from "./validation";
 export const chatEmojis = ["👍", "❤️", "🎉", "🚀", "👀", "💡"] as const;
 export const CHAT_LIMIT = 3000;
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export function sectionLabel(section: string) {
+  return section === "ideas" ? "Ideas & Projects" : "AI Library";
+}
+export function findShareableEntries(
+  entries: Entry[],
+  workspaceId: string,
+  demo: boolean,
+  query: string,
+) {
+  const search = query.trim().toLocaleLowerCase();
+  return entries.filter(
+    (e) =>
+      (demo || e.workspace_id === workspaceId) &&
+      e.status !== "Trash" &&
+      [e.title, e.description, e.category, ...e.tags]
+        .join(" ")
+        .toLocaleLowerCase()
+        .includes(search),
+  );
+}
+export function shouldSendOnEnter(
+  event: {
+    key: string;
+    shiftKey: boolean;
+    ctrlKey?: boolean;
+    altKey?: boolean;
+    metaKey?: boolean;
+    isComposing?: boolean;
+    keyCode?: number;
+  },
+  composing: boolean,
+) {
+  return (
+    event.key === "Enter" &&
+    !event.shiftKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    !composing &&
+    !event.isComposing &&
+    event.keyCode !== 229
+  );
+}
 export function validateChatMessage(input: {
   body: string;
   reply_to?: string | null;
@@ -11,11 +55,11 @@ export function validateChatMessage(input: {
   const body = input.body.trim();
   if ([...body].length > CHAT_LIMIT || (!body && !input.shared_entry_id))
     throw new Error(
-      "Write a message of 1–3,000 characters or share a library tool.",
+      "Write a message of 1–3,000 characters or share an Idea Hub entry.",
     );
   for (const id of [input.reply_to, input.shared_entry_id])
     if (id != null && !uuid.test(id))
-      throw new Error("Invalid message or library reference.");
+      throw new Error("Invalid message or entry reference.");
   return {
     body,
     reply_to: input.reply_to || null,
@@ -56,6 +100,7 @@ export type ChatMessage = {
     title: string;
     description: string;
     category: string;
+    section?: "library" | "ideas";
   } | null;
 };
 export function mergeChatMessages(

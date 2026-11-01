@@ -53,16 +53,24 @@ try {
     await reply.locator("blockquote").innerText(),
     /private demo thought/,
   );
+  await reply
+    .getByLabel("Add reaction to message from You", { exact: true })
+    .click();
   const reaction = reply.getByLabel("React 👍 to message from You", {
     exact: true,
   });
   await reaction.click();
-  assert.equal(await reaction.getAttribute("aria-pressed"), "true");
-  await reaction.click();
-  assert.equal(await reaction.getAttribute("aria-pressed"), "false");
+  const badge = reply.getByRole("button", { name: /Toggle 👍 reaction/ });
+  assert.equal(await badge.getAttribute("aria-pressed"), "true");
+  await badge.click();
+  assert.equal(await badge.count(), 0);
   await panel
-    .getByLabel("Share a library tool")
-    .selectOption({ label: "Claude" });
+    .getByRole("button", { name: "Share from Idea Hub", exact: true })
+    .click();
+  await panel.getByLabel("Search Idea Hub entries").fill("Claude");
+  await panel
+    .getByRole("button", { name: "Claude · AI Library", exact: true })
+    .click();
   await panel.getByRole("button", { name: "Send", exact: false }).click();
   await panel
     .locator(".chat-message")
