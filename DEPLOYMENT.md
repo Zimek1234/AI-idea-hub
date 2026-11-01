@@ -1,23 +1,25 @@
 # Deployment handoff
 
-No production infrastructure has been modified. Publishing Git commits and deploying Vercel are separate actions. The current implementation is on the local `work` branch; check the current commit with `git rev-parse HEAD`.
+The local `feature/team-chat` branch extends `deploy/mvp` with shared workspace chat. Do not push, merge, deploy, or apply `202611010001_team_chat.sql` until explicitly authorized. The already deployed MVP is unaffected by local code and test runs. See README's shared chat section for the migration order, Realtime publication setup, and multi-user verification. The export bundle/source archive described below contains the original MVP; it is not a backup of this new feature commit.
+
+No production infrastructure has been modified by this feature. Publishing Git commits and deploying Vercel are separate actions. Check the current feature commit with `git rev-parse HEAD`.
 
 ## Preserve and publish the code
 
 The handoff includes a portable Git bundle and source archive under `/workspace/deployment-export` (outside the checkout). Download these before discarding the Codex environment. The bundle preserves committed source and Git history; the source archive includes all committed dotfiles. Neither includes dependencies, build output, `.env.local`, or other ignored local files. Those files are not required to reproduce the application. Store any real secrets separately in your secure environment settings.
 
-If authorized to publish from Codex, push the current commit to a feature branch, not `main`:
+Only after explicit authorization to publish this feature, push its own branch:
 
 ```sh
 cd /workspace/AI-idea-hub
 git status --short
 git log -1 --oneline
-git push origin HEAD:refs/heads/deploy/mvp
+git push origin feature/team-chat:refs/heads/feature/team-chat
 ```
 
-This command is a next step, not something this handoff has executed. A branch push may trigger existing repository automation or Vercel preview deployments; review integrations before running it. Open a pull request from `deploy/mvp` into `main` afterward. Do not merge until deployment and infrastructure changes are approved.
+This command has not been executed. A branch push may trigger existing repository automation or Vercel preview deployments; review integrations before running it. The first `deploy/mvp` pull request is still unmerged, so any later chat pull request should use `deploy/mvp` as its base unless the MVP has since been merged. Do not merge until explicitly authorized.
 
-If GitHub writes are unavailable from Codex, download `AI-idea-hub.bundle`, `AI-idea-hub-source.tar.gz`, and `SHA256SUMS` from `/workspace/deployment-export`. On a computer with GitHub access:
+The existing `AI-idea-hub.bundle`, `AI-idea-hub-source.tar.gz`, and `SHA256SUMS` in `/workspace/deployment-export` recover only the original MVP (`012130b`), not team chat. To inspect that recovery copy on another computer:
 
 ```sh
 # Run in the directory containing the downloaded files.
@@ -29,10 +31,10 @@ git bundle verify ../AI-idea-hub.bundle
 git remote set-url origin https://github.com/Zimek1234/AI-idea-hub.git
 git status --short
 git log -1 --oneline
-git push origin HEAD:refs/heads/deploy/mvp
+git log -1 --oneline # Expected original MVP commit: 012130b
 ```
 
-Authenticate through your normal Git credential manager/GitHub login if required. No token needs to be pasted into chat or committed. If the branch already exists with other work, choose a new branch name; do not force-push. The source archive is an additional recovery copy; prefer the bundle for publishing because it retains history.
+The source archive is an additional recovery copy; prefer the bundle because it retains history. Preserve this feature branch separately before discarding the environment. Do not force-push or replace `deploy/mvp` with feature work.
 
 ## Demo deployment on Vercel (after deployment approval)
 

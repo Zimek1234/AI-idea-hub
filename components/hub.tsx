@@ -14,6 +14,7 @@ import {
 } from "@/lib/validation";
 import { demoEntries, marks } from "@/lib/demo";
 import Icon from "./icon";
+import TeamChat from "./team-chat";
 const db = getSupabase();
 type Workspace = { id: string; name: string; owner_id: string };
 type Member = { user_id: string; email: string };
@@ -42,6 +43,8 @@ function friendly(error: unknown): string {
     : e.message || "Something went wrong. Please try again.";
 }
 export default function Hub() {
+  const [chatOpen, setChatOpen] = useState(false);
+  const toggleChat = useCallback(() => setChatOpen((open) => !open), []);
   const [demo, setDemo] = useState(!db),
     [user, setUser] = useState<User | null>(null),
     [authReady, setAuthReady] = useState(!db);
@@ -354,7 +357,7 @@ export default function Hub() {
       </main>
     );
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${chatOpen ? "chat-expanded" : ""}`}>
       <aside className={`sidebar ${mobile ? "is-open" : ""}`}>
         <a className="brand" href="/" aria-label="AI Idea Hub home">
           <span className="brand-symbol">
@@ -851,6 +854,37 @@ export default function Hub() {
           )}
         </main>
       </div>
+      {(demo || (user && wid)) && (
+        <TeamChat
+          key={demo ? "demo-chat" : `${user?.id}:${wid}`}
+          db={db}
+          demo={demo}
+          workspaceId={demo ? "demo" : wid}
+          userId={demo ? "demo" : user!.id}
+          entries={entries}
+          author={author}
+          open={chatOpen}
+          onToggle={toggleChat}
+          onOpenEntry={async (id) => {
+            const g = generation.current;
+            if (demo) {
+              const entry = entries.find((e) => e.id === id);
+              if (!entry) throw new Error("Entry unavailable");
+              setSelected(entry);
+            } else {
+              const r = await db!
+                .from("entries")
+                .select("*")
+                .eq("id", id)
+                .eq("workspace_id", wid)
+                .single();
+              if (r.error) throw r.error;
+              if (g !== generation.current) return;
+              setSelected(r.data);
+            }
+          }}
+        />
+      )}
       {error && (
         <div role="alert" className="toast error">
           {error}

@@ -76,6 +76,9 @@ export default function Icon({
     ),
     menu: <path d="M4 6h16M4 12h16M4 18h16" />,
     code: <path d="m8 7-5 5 5 5m8-10 5 5-5 5M14 4l-4 16" />,
+    comment: (
+      <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-3 2V11.5A8.5 8.5 0 0 1 9.5 3h3a8.5 8.5 0 0 1 8.5 8.5ZM6 9h10M6 13h7" />
+    ),
   };
   return (
     <svg
