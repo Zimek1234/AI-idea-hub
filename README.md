@@ -38,7 +38,42 @@ For a local Supabase stack, apply the migration against that stack and use its l
 - Personal ratings (1–5) and notes readable only by their author. Shared comments; authors may delete their own comments.
 - Owner-managed membership/invites, responsive dark UI, keyboard-accessible dialogs.
 
-Updates are fetched when entering/switching workspaces or after mutations; this MVP does not subscribe to live collaboration events. Refresh to see another user's changes. Shared entry edits use last-write-wins. Ideas reuse the entry model and statuses; kanban, project tasks, attachments, history, and notifications are future work.
+Library and idea updates are fetched when entering/switching workspaces or after mutations. Refresh to see another user's entry changes; team chat has its own Realtime subscription as described below. Shared entry edits use last-write-wins. Ideas reuse the entry model and statuses; kanban, project tasks, attachments, edit history, and notifications are future work.
+
+## Shared team chat
+
+Each workspace has one persistent shared conversation. Use **Team chat** in the bottom-right corner to open or collapse the right-side desktop panel. On mobile it opens full-screen; Close or Escape returns to the library. Messages show the author and local date/time. Replies quote their parent message; six emoji reactions can be toggled per person. Select **Share a library tool** to send a clickable card, with or without a message. Cards open the existing library details; unavailable entries have a fallback label. Chat does not change the MCP endpoint or its four tools.
+
+Chat messages, reactions, and read cursors use Supabase Postgres Changes with workspace filters and database RLS. A subscription reconnect, browser focus, or network reconnection refreshes history; a 15-second refresh also recovers missed events and checks membership. Connection status appears in the header. Chat initially fetches the newest 50 messages; **Load older messages** pages backward through persistent history. Messages are plain text, limited to 3,000 characters. History is append-only in this version; editing/deleting messages and attachments are not included.
+
+Unread counts exclude your own messages and use a private read cursor persisted per user/workspace. The cursor advances to the latest loaded message only while the panel is open, the page is visible, and the conversation is at the bottom. **Jump to latest** returns to new messages. Marking the latest message read also marks earlier history read. Cursor timestamps come from the database, and multiple tabs cannot move the cursor backward. Read positions and drafts reset on account/workspace changes; persisted cursors are reloaded for that workspace. Other workspaces' unread counts appear when switching to them.
+
+### Database setup for chat (manual, after infrastructure approval)
+
+The feature branch only contains the migration; it has **not** been applied to any hosted project. Do not apply it or deploy until authorized.
+
+1. Apply the existing `202610310001_initial.sql` migration first on a fresh development database; do not reapply it to an existing MVP database.
+2. Apply `supabase/migrations/202611010001_team_chat.sql` once. It adds `chat_messages`, `chat_reactions`, `chat_reads`, indexes, reference constraints, RLS, and `mark_chat_read`. The migration adds the three chat tables to `supabase_realtime` when that publication exists. Standard hosted Supabase projects already have it; if your development stack does not, an administrator must configure a publication before live updates will work.
+3. Verify the publication includes all three tables and Supabase Realtime is enabled. Keep RLS enabled. No additional environment variables, service-role keys, public Broadcast channels, or production infrastructure changes are needed.
+4. Test with two invited users in the same workspace and one unrelated user. Verify message delivery, replies, reactions, shared tool cards, unread counts across reloads/tabs, and membership revocation. Removed members lose database read/write access immediately; a connected UI clears cached conversation data on its next membership check (within 15 seconds while visible, or on focus). Previously delivered information cannot be recalled from a user's browser.
+
+Only members can select/insert messages and select reactions; they can toggle only their own reactions. Read cursors are visible only to their owner. Composite foreign keys prevent replies, reactions, and tool shares from referencing another workspace. The message trigger checks that shared entries belong to the AI Library and supplies the server timestamp. Message updates/deletes and anonymous access have no grants. Reaction removal uses an inactive row so Realtime can filter INSERT/UPDATE events by workspace; the client does not subscribe to DELETE events.
+
+Without Supabase, chat starts with synthetic conversations. Sending, replying, reacting, sharing tools, and unread UI all work in React memory. No chat data is written to Web Storage or sent to a database; reload resets it and separate visitors never share demo messages.
+
+### Chat verification
+
+`npm test` includes validation/reconciliation tests and embedded PostgreSQL migration/RLS tests. With the unconfigured demo running locally, `npm run test:chat` exercises desktop/mobile chat, replies, reactions, cards, unread indicators, keyboard behavior, plain-text rendering, and isolation between visitors. Existing browser and MCP suites still apply.
+
+To exercise the authenticated client with intercepted HTTP and Realtime WebSocket fixtures, start a separate **local** development server in one terminal, then run the fixture suite in another:
+
+```sh
+NEXT_PUBLIC_SUPABASE_URL=https://chat-fixture.supabase.co NEXT_PUBLIC_SUPABASE_ANON_KEY=fixture-public-key APP_URL=http://localhost:3001 npm run dev -- --port 3001
+# Another terminal:
+npm run test:chat-realtime
+```
+
+The suite intercepts all requests to that synthetic Supabase hostname. It checks history pagination, live inserts and reaction updates, read cursors, retry drafts, workspace/channel cleanup, and membership removal. Never use fixture settings for a deployment. These local checks do not establish hosted Supabase Realtime or Vercel deployment readiness; test the configured development project before releasing. The message author label is copied from the authenticated member's email by the database trigger, so historical authors remain identifiable after leaving; clients cannot impersonate a display name.
 
 ## MCP and ChatGPT
 

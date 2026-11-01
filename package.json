@@ -9,6 +9,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "node --experimental-strip-types --test --test-isolation=none tests/*.test.ts",
     "test:browser": "node tests/browser.mjs",
+    "test:chat": "node tests/chat-browser.mjs",
+    "test:chat-realtime": "node tests/chat-realtime.mjs",
     "test:mcp-client": "node tests/mcp-client.mjs",
     "format": "prettier --write app components lib tests supabase README.md next.config.ts postcss.config.mjs tsconfig.json package.json",
     "format:check": "prettier --check app components lib tests README.md next.config.ts postcss.config.mjs tsconfig.json package.json"
